@@ -1,11 +1,14 @@
 #include "shell.h"
 #include <ctype.h>
+#include <readline/readline.h>
+#include <readline/history.h>
 
 int main() {
     char* cmdline;
     char** arglist;
 
-    while ((cmdline = read_cmd(PROMPT, stdin)) != NULL) {
+    // readline() prints the prompt, handles editing, arrows and Tab completion
+    while ((cmdline = readline(PROMPT)) != NULL) {
 
         // Handle !n before tokenizing or saving to history
         if (cmdline[0] == '!') {
@@ -41,7 +44,8 @@ int main() {
             }
         }
         if (has_text) {
-            add_to_history(cmdline);
+            add_history(cmdline);       // readline history (Up/Down arrows)
+            add_to_history(cmdline);    // our own history (history command, !n)
         }
 
         if ((arglist = tokenize(cmdline)) != NULL) {
