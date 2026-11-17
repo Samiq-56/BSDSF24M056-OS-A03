@@ -28,4 +28,10 @@ const char* get_history(int n);
 void add_job(pid_t pid, const char* cmd);
 void reap_jobs(void);
 void print_jobs(void);
+int is_assignment(const char* token);
+void set_var(const char* name, const char* value);
+const char* get_var(const char* name);
+void print_vars(void);
+char* expand_word(const char* word);
+int try_assignment(char** cmd, int len);
 #endif // SHELL_H

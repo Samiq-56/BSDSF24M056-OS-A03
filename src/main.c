@@ -30,24 +30,44 @@ static int is_if_line(char* line) {
 // ---------- running commands ----------
 
 // Run one command (tokens cmd[0..len-1], NULL terminated). Returns its exit status.
-static int run_command(char** cmd, int len, int background) {
+static int run_command(char** cmd_in, int len, int background) {
     if (len == 0) return 0;
 
-    // Text version of the command, used by the jobs list
-    char text[MAX_LEN];
-    text[0] = '\0';
+    // Expansion step: replace $VAR words with their values.
+    // These are new strings, freed at the end of this function.
+    char* cmd[MAXARGS + 1];
     for (int i = 0; i < len; i++) {
-        if (i > 0) strncat(text, " ", MAX_LEN - strlen(text) - 1);
-        strncat(text, cmd[i], MAX_LEN - strlen(text) - 1);
+        cmd[i] = expand_word(cmd_in[i]);
+    }
+    cmd[len] = NULL;
+
+    int status;
+
+    if (try_assignment(cmd, len)) {
+        // NAME=value is handled by the shell itself, no fork
+        status = 0;
+    } else {
+        // Text version of the command, used by the jobs list
+        char text[MAX_LEN];
+        text[0] = '\0';
+        for (int i = 0; i < len; i++) {
+            if (i > 0) strncat(text, " ", MAX_LEN - strlen(text) - 1);
+            strncat(text, cmd[i], MAX_LEN - strlen(text) - 1);
+        }
+
+        if (has_operator(cmd)) {
+            status = execute(cmd, background, text);
+        } else if (handle_builtin(cmd)) {
+            status = 0;
+        } else {
+            status = execute(cmd, background, text);
+        }
     }
 
-    if (has_operator(cmd)) {
-        return execute(cmd, background, text);
+    for (int i = 0; i < len; i++) {
+        free(cmd[i]);
     }
-    if (handle_builtin(cmd)) {
-        return 0;
-    }
-    return execute(cmd, background, text);
+    return status;
 }
 
 // Tokenize one line, run every command in it (split at ; and &)

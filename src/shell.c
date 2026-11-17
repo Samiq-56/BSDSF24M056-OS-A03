@@ -1,4 +1,5 @@
 #include "shell.h"
+#include <ctype.h>
 
 char* read_cmd(char* prompt, FILE* fp) {
     printf("%s", prompt);
@@ -104,7 +105,14 @@ int handle_builtin(char** arglist) {
         printf("  cd <dir>    - Change the current working directory\n");
         printf("  help        - Show this help message\n");
         printf("  history     - Show command history (use !n to re-run)\n");
+        printf("  set         - Show shell variables (define with NAME=value)\n");
         printf("  jobs        - List running background jobs\n");
+        return 1;
+    }
+
+    // set
+    if (strcmp(arglist[0], "set") == 0) {
+        print_vars();
         return 1;
     }
 
@@ -211,4 +219,130 @@ void print_jobs(void) {
     for (int i = 0; i < job_count; i++) {
         printf("[%d]  %d  Running  %s\n", jobs_list[i].id, (int)jobs_list[i].pid, jobs_list[i].cmd);
     }
+}
+
+
+// ---------- Shell Variables ----------
+typedef struct var {
+    char* name;
+    char* value;
+    struct var* next;
+} var_t;
+
+static var_t* var_head = NULL;
+
+// Create a variable, or change its value if it already exists
+void set_var(const char* name, const char* value) {
+    var_t* last = NULL;
+
+    for (var_t* v = var_head; v != NULL; v = v->next) {
+        if (strcmp(v->name, name) == 0) {
+            free(v->value);
+            v->value = strdup(value);
+            return;
+        }
+        last = v;
+    }
+
+    var_t* node = (var_t*)malloc(sizeof(var_t));
+    node->name = strdup(name);
+    node->value = strdup(value);
+    node->next = NULL;
+
+    if (last == NULL) {
+        var_head = node;
+    } else {
+        last->next = node;
+    }
+}
+
+// Look up a shell variable, then fall back to the environment (HOME, USER, ...)
+const char* get_var(const char* name) {
+    for (var_t* v = var_head; v != NULL; v = v->next) {
+        if (strcmp(v->name, name) == 0) {
+            return v->value;
+        }
+    }
+    return getenv(name);
+}
+
+// Print all shell variables
+void print_vars(void) {
+    if (var_head == NULL) {
+        printf("No variables defined.\n");
+        return;
+    }
+    for (var_t* v = var_head; v != NULL; v = v->next) {
+        printf("%s=%s\n", v->name, v->value);
+    }
+}
+
+// 1 if the token looks like NAME=value (valid NAME, no spaces before the =)
+int is_assignment(const char* token) {
+    const char* eq = strchr(token, '=');
+
+    if (eq == NULL || eq == token) return 0;
+    if (isalpha((unsigned char)token[0]) == 0 && token[0] != '_') return 0;
+
+    for (const char* p = token; p < eq; p++) {
+        if (isalnum((unsigned char)*p) == 0 && *p != '_') return 0;
+    }
+    return 1;
+}
+
+// If every token is NAME=value, store them all and return 1. Otherwise return 0.
+int try_assignment(char** cmd, int len) {
+    for (int i = 0; i < len; i++) {
+        if (is_assignment(cmd[i]) == 0) return 0;
+    }
+
+    for (int i = 0; i < len; i++) {
+        char* eq = strchr(cmd[i], '=');
+        *eq = '\0';
+        set_var(cmd[i], eq + 1);
+        *eq = '=';
+    }
+    return 1;
+}
+
+// Returns a NEW string where every $NAME in the word is replaced by its value.
+// An undefined variable becomes an empty string. The caller must free() the result.
+char* expand_word(const char* word) {
+    size_t cap = strlen(word) + 1;
+    char* out = (char*)malloc(cap);
+    size_t len = 0;
+    const char* p = word;
+
+    while (*p != '\0') {
+        if (*p == '$' && (isalpha((unsigned char)p[1]) || p[1] == '_')) {
+            char name[MAX_LEN];
+            int n = 0;
+
+            p++;   // skip the '$'
+            while ((isalnum((unsigned char)*p) || *p == '_') && n < MAX_LEN - 1) {
+                name[n++] = *p++;
+            }
+            name[n] = '\0';
+
+            const char* val = get_var(name);
+            if (val == NULL) val = "";
+
+            size_t vl = strlen(val);
+            while (len + vl + 1 > cap) {
+                cap *= 2;
+                out = (char*)realloc(out, cap);
+            }
+            memcpy(out + len, val, vl);
+            len += vl;
+        } else {
+            if (len + 2 > cap) {
+                cap *= 2;
+                out = (char*)realloc(out, cap);
+            }
+            out[len++] = *p++;
+        }
+    }
+
+    out[len] = '\0';
+    return out;
 }
