@@ -157,9 +157,18 @@ int execute(char* arglist[], int background, const char* cmdtext) {
         return 0;
     }
 
+    // The exit status of the whole line is the status of its last process
+    int last_status = (launched == 0) ? 1 : 0;
     for (int i = 0; i < launched; i++) {
         int status;
         waitpid(pids[i], &status, 0);
+        if (i == launched - 1) {
+            if (WIFEXITED(status)) {
+                last_status = WEXITSTATUS(status);
+            } else {
+                last_status = 128 + WTERMSIG(status);
+            }
+        }
     }
-    return 0;
+    return last_status;
 }
