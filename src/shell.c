@@ -20,39 +20,44 @@ char* read_cmd(char* prompt, FILE* fp) {
 }
 
 char** tokenize(char* cmdline) {
-    // Edge case: empty command line
-    if (cmdline == NULL || cmdline[0] == '\0' || cmdline[0] == '\n') {
+    if (cmdline == NULL || cmdline[0] == '\0') {
         return NULL;
     }
 
-    char** arglist = (char**)malloc(sizeof(char*) * (MAXARGS + 1));
-    for (int i = 0; i < MAXARGS + 1; i++) {
-        arglist[i] = (char*)malloc(sizeof(char) * ARGLEN);
-        bzero(arglist[i], ARGLEN);
-    }
-
-    char* cp = cmdline;
-    char* start;
-    int len;
+    char** arglist = (char**)calloc(MAXARGS + 1, sizeof(char*));
     int argnum = 0;
+    char* cp = cmdline;
 
     while (*cp != '\0' && argnum < MAXARGS) {
-        while (*cp == ' ' || *cp == '\t') cp++; // Skip leading whitespace
-        
-        if (*cp == '\0') break; // Line was only whitespace
+        while (*cp == ' ' || *cp == '\t') cp++;   // skip whitespace
+        if (*cp == '\0') break;
 
-        start = cp;
-        len = 1;
-        while (*++cp != '\0' && !(*cp == ' ' || *cp == '\t')) {
-            len++;
+        char* tok = (char*)malloc(strlen(cp) + 1);
+        int len = 0;
+
+        if (*cp == '<' || *cp == '>' || *cp == '|') {
+            // Operators are always a token of their own
+            tok[len++] = *cp++;
+        } else {
+            while (*cp != '\0' && *cp != ' ' && *cp != '\t' &&
+                   *cp != '<' && *cp != '>' && *cp != '|') {
+                if (*cp == '"' || *cp == '\'') {
+                    // Quoted text: copy it without the quotes
+                    char quote = *cp++;
+                    while (*cp != '\0' && *cp != quote) {
+                        tok[len++] = *cp++;
+                    }
+                    if (*cp == quote) cp++;
+                } else {
+                    tok[len++] = *cp++;
+                }
+            }
         }
-        strncpy(arglist[argnum], start, len);
-        arglist[argnum][len] = '\0';
-        argnum++;
+        tok[len] = '\0';
+        arglist[argnum++] = tok;
     }
 
-    if (argnum == 0) { // No arguments were parsed
-        for(int i = 0; i < MAXARGS + 1; i++) free(arglist[i]);
+    if (argnum == 0) {
         free(arglist);
         return NULL;
     }

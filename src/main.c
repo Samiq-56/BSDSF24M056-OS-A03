@@ -51,7 +51,7 @@ int main() {
         if ((arglist = tokenize(cmdline)) != NULL) {
 
             // Run external command only if it is NOT a built-in
-            if (handle_builtin(arglist) == 0) {
+            if (has_operator(arglist) || handle_builtin(arglist) == 0) {
                 execute(arglist);
             }
 
