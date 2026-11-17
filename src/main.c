@@ -3,14 +3,35 @@
 #include <readline/readline.h>
 #include <readline/history.h>
 
+// Run one command (tokens cmd[0..len-1], NULL terminated) in foreground or background
+static void run_command(char** cmd, int len, int background) {
+    if (len == 0) return;
+
+    // Text version of the command, used by the jobs list
+    char text[MAX_LEN];
+    text[0] = '\0';
+    for (int i = 0; i < len; i++) {
+        if (i > 0) strncat(text, " ", MAX_LEN - strlen(text) - 1);
+        strncat(text, cmd[i], MAX_LEN - strlen(text) - 1);
+    }
+
+    if (has_operator(cmd) || handle_builtin(cmd) == 0) {
+        execute(cmd, background, text);
+    }
+}
+
 int main() {
     char* cmdline;
     char** arglist;
 
-    // readline() prints the prompt, handles editing, arrows and Tab completion
-    while ((cmdline = readline(PROMPT)) != NULL) {
+    while (1) {
+        // Collect finished background jobs before showing the prompt
+        reap_jobs();
 
-        // Handle !n before tokenizing or saving to history
+        cmdline = readline(PROMPT);
+        if (cmdline == NULL) break;
+
+        // Handle history re-execution (number after the exclamation mark) first
         if (cmdline[0] == '!') {
             char* num = cmdline + 1;
             int valid = (*num != '\0');
@@ -28,11 +49,11 @@ int main() {
                 continue;
             }
 
-            // Replace "!n" with the stored command
+            // Replace the history reference with the stored command
             char* expanded = strdup(old);
             free(cmdline);
             cmdline = expanded;
-            printf("%s\n", cmdline);   // show which command is being re-run
+            printf("%s\n", cmdline);
         }
 
         // Save to history only if the line has some real text
@@ -45,15 +66,26 @@ int main() {
         }
         if (has_text) {
             add_history(cmdline);       // readline history (Up/Down arrows)
-            add_to_history(cmdline);    // our own history (history command, !n)
+            add_to_history(cmdline);    // our own history (history command)
         }
 
         if ((arglist = tokenize(cmdline)) != NULL) {
+            // Split the tokens at ';' and '&' and run each command in order
+            char* cmd[MAXARGS + 1];
+            int len = 0;
 
-            // Run external command only if it is NOT a built-in
-            if (has_operator(arglist) || handle_builtin(arglist) == 0) {
-                execute(arglist);
+            for (int i = 0; arglist[i] != NULL; i++) {
+                if (strcmp(arglist[i], ";") == 0 || strcmp(arglist[i], "&") == 0) {
+                    int background = (strcmp(arglist[i], "&") == 0);
+                    cmd[len] = NULL;
+                    run_command(cmd, len, background);
+                    len = 0;
+                } else {
+                    cmd[len++] = arglist[i];
+                }
             }
+            cmd[len] = NULL;
+            run_command(cmd, len, 0);
 
             // Free the memory allocated by tokenize()
             for (int i = 0; arglist[i] != NULL; i++) {

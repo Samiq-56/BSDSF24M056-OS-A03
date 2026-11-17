@@ -35,12 +35,12 @@ char** tokenize(char* cmdline) {
         char* tok = (char*)malloc(strlen(cp) + 1);
         int len = 0;
 
-        if (*cp == '<' || *cp == '>' || *cp == '|') {
+        if (*cp == '<' || *cp == '>' || *cp == '|' || *cp == ';' || *cp == '&') {
             // Operators are always a token of their own
             tok[len++] = *cp++;
         } else {
             while (*cp != '\0' && *cp != ' ' && *cp != '\t' &&
-                   *cp != '<' && *cp != '>' && *cp != '|') {
+                   *cp != '<' && *cp != '>' && *cp != '|' && *cp != ';' && *cp != '&') {
                 if (*cp == '"' || *cp == '\'') {
                     // Quoted text: copy it without the quotes
                     char quote = *cp++;
@@ -104,7 +104,7 @@ int handle_builtin(char** arglist) {
         printf("  cd <dir>    - Change the current working directory\n");
         printf("  help        - Show this help message\n");
         printf("  history     - Show command history (use !n to re-run)\n");
-        printf("  jobs        - Show background jobs (not yet implemented)\n");
+        printf("  jobs        - List running background jobs\n");
         return 1;
     }
 
@@ -116,7 +116,7 @@ int handle_builtin(char** arglist) {
 
     // jobs (placeholder)
     if (strcmp(arglist[0], "jobs") == 0) {
-        printf("Job control not yet implemented.\n");
+        print_jobs();
         return 1;
     }
 
@@ -153,4 +153,62 @@ const char* get_history(int n) {
         return NULL;
     }
     return history[n - 1];
+}
+
+
+// ---------- Background Jobs ----------
+#define MAX_JOBS 64
+
+typedef struct {
+    int id;
+    pid_t pid;
+    char cmd[MAX_LEN];
+} job_t;
+
+static job_t jobs_list[MAX_JOBS];
+static int job_count = 0;
+static int next_job_id = 1;
+
+// Remember a background process
+void add_job(pid_t pid, const char* cmd) {
+    if (job_count == MAX_JOBS) {
+        fprintf(stderr, "Too many background jobs\n");
+        return;
+    }
+    jobs_list[job_count].id = next_job_id++;
+    jobs_list[job_count].pid = pid;
+    strncpy(jobs_list[job_count].cmd, cmd, MAX_LEN - 1);
+    jobs_list[job_count].cmd[MAX_LEN - 1] = '\0';
+    printf("[%d] %d\n", jobs_list[job_count].id, (int)pid);
+    job_count++;
+}
+
+// Collect finished children (non-blocking) so they do not stay zombies
+void reap_jobs(void) {
+    int status;
+    pid_t pid;
+
+    while ((pid = waitpid(-1, &status, WNOHANG)) > 0) {
+        for (int i = 0; i < job_count; i++) {
+            if (jobs_list[i].pid == pid) {
+                printf("[%d]  Done    %s\n", jobs_list[i].id, jobs_list[i].cmd);
+                for (int j = i + 1; j < job_count; j++) {
+                    jobs_list[j - 1] = jobs_list[j];
+                }
+                job_count--;
+                break;
+            }
+        }
+    }
+}
+
+// Print all running background jobs
+void print_jobs(void) {
+    if (job_count == 0) {
+        printf("No background jobs.\n");
+        return;
+    }
+    for (int i = 0; i < job_count; i++) {
+        printf("[%d]  %d  Running  %s\n", jobs_list[i].id, (int)jobs_list[i].pid, jobs_list[i].cmd);
+    }
 }

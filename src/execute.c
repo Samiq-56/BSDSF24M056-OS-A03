@@ -76,7 +76,7 @@ static void run_segment(char** arglist, int start, int end) {
     exit(1);
 }
 
-int execute(char* arglist[]) {
+int execute(char* arglist[], int background, const char* cmdtext) {
     int starts[MAXARGS + 2];
     int ends[MAXARGS + 2];
     pid_t pids[MAXARGS + 2];
@@ -148,6 +148,14 @@ int execute(char* arglist[]) {
     }
 
     if (prev_read != -1) close(prev_read);
+
+    if (background) {
+        // Do not wait: remember the last process of this line as a background job
+        if (launched > 0) {
+            add_job(pids[launched - 1], cmdtext);
+        }
+        return 0;
+    }
 
     for (int i = 0; i < launched; i++) {
         int status;
